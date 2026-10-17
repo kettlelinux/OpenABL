@@ -1282,6 +1282,8 @@ RunCommand (
         M->Stored.BootSource != Was.BootSource) {
       FillEntries (M, &mApp);
     }
+#else
+    (VOID)Was;
 #endif
     if (Failure) {
       AppOnFailed (&mApp, Failure);
