@@ -123,11 +123,13 @@ PushFile (
   }
 }
 
-// Appends drive Volume's entries, then its default file.
+// Appends drive Volume's entries, those of them Extlinux asks for, then its
+// default file unless Extlinux is BOOT_EXTLINUX_ONLY.
 STATIC VOID
 Drive (
   IN CONST BOOT_ENTRIES_VOLUME *Volumes,
   IN UINTN                      Volume,
+  IN BOOT_EXTLINUX              Extlinux,
   IN OUT BOOT_MANAGER_TARGETS  *Out
 )
 {
@@ -136,6 +138,13 @@ Drive (
   OABL_BUFFER                Path = {0};
 
   for (UINTN Entry = 0; Entry < V->Entries.Count; Entry++) {
+    BOOLEAN Label =
+      V->Entries.Items[Entry].Source == BOOT_ENTRY_SOURCE_EXTLINUX;
+
+    if ((Extlinux == BOOT_EXTLINUX_WITHOUT && Label) ||
+        (Extlinux == BOOT_EXTLINUX_ONLY && !Label)) {
+      continue;
+    }
     VecPush (
       Out, (BOOT_MANAGER_TARGET){
              .Kind      = BOOT_MANAGER_TARGET_ENTRY,
@@ -145,7 +154,7 @@ Drive (
            }
     );
   }
-  if (V->DefaultFile) {
+  if (V->DefaultFile && Extlinux != BOOT_EXTLINUX_ONLY) {
     if (UefiFilePathNode (UEFI_DEFAULT_BOOT_FILE, &Node) &&
         UefiJoin (
           (OABL_BYTES[]){BufferBytes (&V->Dev), BufferBytes (&Node)}, 2, &Path
@@ -167,12 +176,13 @@ Whole (
   IN UINTN                      Volume,
   IN UINT16                     Option,
   IN CONST UEFI_LOAD_OPTION    *LoadOption,
+  IN BOOT_EXTLINUX              Extlinux,
   IN OUT BOOT_MANAGER_TARGETS  *Out
 )
 {
   UINTN Start = Out->Count;
 
-  Drive (Volumes, Volume, Out);
+  Drive (Volumes, Volume, Extlinux, Out);
   for (UINTN Index = Start; Index < Out->Count; Index++) {
     BOOT_MANAGER_TARGET *Target  = &Out->Items[Index];
     OABL_BUFFER          Options = {0};
@@ -234,6 +244,7 @@ ResolveOption (
   IN UINT16                     Option,
   IN CONST BOOT_ENTRIES_VOLUME *Volumes,
   IN UINTN                      VolumeCount,
+  IN BOOT_EXTLINUX              Extlinux,
   IN OUT BOOT_MANAGER_TARGETS  *Out
 )
 {
@@ -321,7 +332,7 @@ ResolveOption (
           );
         }
       } else {
-        Whole (Volumes, Index, Option, &LoadOption, Out);
+        Whole (Volumes, Index, Option, &LoadOption, Extlinux, Out);
       }
     }
     break;
@@ -354,7 +365,7 @@ ResolveOption (
       if (UefiStartsWith (
             Volumes[Index].Dev.Data, Volumes[Index].Dev.Len, DevPath, DevPathLen
           )) {
-        Whole (Volumes, Index, Option, &LoadOption, Out);
+        Whole (Volumes, Index, Option, &LoadOption, Extlinux, Out);
       }
     }
     break;
@@ -449,6 +460,7 @@ BootManagerPlan (
   IN CONST BOOT_MANAGER        *Manager,
   IN CONST BOOT_ENTRIES_VOLUME *Volumes,
   IN UINTN                      VolumeCount,
+  IN BOOT_EXTLINUX              Extlinux,
   OUT BOOT_MANAGER_TARGETS     *Out
 )
 {
@@ -459,13 +471,20 @@ BootManagerPlan (
   UINTN         Kept = 0;
 
   *Out = (BOOT_MANAGER_TARGETS){0};
+  if (Extlinux == BOOT_EXTLINUX_ONLY) {
+    // Each label once, and no boot options: the one-shot variables stay.
+    for (UINTN Index = 0; Index < VolumeCount; Index++) {
+      Drive (Volumes, Index, Extlinux, Out);
+    }
+    return;
+  }
   if (GetGlobal ("BootNext", &Data) && Data.Len == 2) {
     UINT16 Next = ReadLe16 (Data.Data);
 
     // The boot manager deletes BootNext before trying it.
     DeleteVariable ("BootNext", &gEfiGlobalVariableGuid);
     SerialLog ("BootNext = Boot%04X", (UINT32)Next);
-    ResolveOption (Manager, Next, Volumes, VolumeCount, Out);
+    ResolveOption (Manager, Next, Volumes, VolumeCount, Extlinux, Out);
   }
   BufferFree (&Data);
   Wanted = BliTake ("LoaderEntryOneShot");
@@ -496,11 +515,13 @@ BootManagerPlan (
   SerialLog ("BootOrder = %s", StringGet (&Line));
   StringFree (&Line);
   for (UINTN Index = 0; Index < Order.Count; Index++) {
-    ResolveOption (Manager, Order.Items[Index], Volumes, VolumeCount, Out);
+    ResolveOption (
+      Manager, Order.Items[Index], Volumes, VolumeCount, Extlinux, Out
+    );
   }
   VecFree (&Order);
   for (UINTN Index = 0; Index < VolumeCount; Index++) {
-    Drive (Volumes, Index, Out);
+    Drive (Volumes, Index, Extlinux, Out);
   }
 
   // Keep only the first copy of each target, and never start ourselves.

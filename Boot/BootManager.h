@@ -80,13 +80,25 @@ BootManagerOwnImage (IN CONST BOOT_MANAGER *Manager)
   return BufferBytes (&Manager->OwnImage);
 }
 
-// Lists the targets to try on Volumes, in order. Deletes the one-shot
-// variables. Free Out with BootManagerTargetsFree.
+// Which of the drives' extlinux labels a plan holds.
+typedef enum {
+  // All of them, among each drive's entries.
+  BOOT_EXTLINUX_WITH,
+  // None, except one LoaderEntryOneShot or LoaderEntryDefault names.
+  BOOT_EXTLINUX_WITHOUT,
+  // Only them: no boot options, other entries or default files.
+  BOOT_EXTLINUX_ONLY,
+} BOOT_EXTLINUX;
+
+// Lists the targets to try on Volumes, in order, with the extlinux labels
+// Extlinux asks for. Deletes the one-shot variables. Free Out with
+// BootManagerTargetsFree.
 VOID
 BootManagerPlan (
   IN CONST BOOT_MANAGER        *Manager,
   IN CONST BOOT_ENTRIES_VOLUME *Volumes,
   IN UINTN                      VolumeCount,
+  IN BOOT_EXTLINUX              Extlinux,
   OUT BOOT_MANAGER_TARGETS     *Out
 );
 

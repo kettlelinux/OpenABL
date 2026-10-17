@@ -80,6 +80,8 @@ typedef struct _BOOT_SCOPE {
   // Also try each drive's \EFI\BOOT\BOOTAA64.EFI (the ABL starts those
   // itself, with its own fallbacks).
   BOOLEAN DefaultFiles;
+  // Which extlinux labels to try (BOOT_EXTLINUX_WITH, zero, for all).
+  BOOT_EXTLINUX Extlinux;
 } BOOT_SCOPE;
 
 typedef enum {

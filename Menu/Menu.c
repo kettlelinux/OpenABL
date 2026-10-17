@@ -778,7 +778,9 @@ AddRow (
 }
 
 // Lists what Start would try on the allowed drives, in its order: each
-// drive's entries, then the first boot image. Only in Linux boot mode.
+// drive's entries but its extlinux labels, then each drive's extlinux labels
+// (after the default files, which aren't listed), then the first boot image.
+// Only in Linux boot mode.
 STATIC VOID
 FillEntries (
   IN MENU_STATE *M,
@@ -800,17 +802,22 @@ FillEntries (
       BytesOf (NULL, 0), TRUE, Drives.Items, Drives.Count, FALSE, &mVolumes
     );
   }
-  for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
-    CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Index];
+  for (UINTN Labels = 0; Labels < 2; Labels++) {
+    for (UINTN Index = 0; Index < mVolumes.Count; Index++) {
+      CONST BOOT_ENTRIES_VOLUME *V = &mVolumes.Items[Index];
 
-    for (UINTN Index2 = 0; Index2 < V->Entries.Count; Index2++) {
-      CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index2];
+      for (UINTN Index2 = 0; Index2 < V->Entries.Count; Index2++) {
+        CONST BOOT_ENTRY *Entry = &V->Entries.Items[Index2];
 
-      AddRow (
-        Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
-        BootEntrySourceName (Entry->Source), Entry->Version,
-        BootEntryIsBad (Entry), Entry->Id
-      );
+        if ((Entry->Source == BOOT_ENTRY_SOURCE_EXTLINUX) != (Labels == 1)) {
+          continue;
+        }
+        AddRow (
+          Views, &Count, Index, Entry->Title ? Entry->Title : Entry->Id,
+          BootEntrySourceName (Entry->Source), Entry->Version,
+          BootEntryIsBad (Entry), Entry->Id
+        );
+      }
     }
   }
   // Start reaches a boot image only after every drive's entries.

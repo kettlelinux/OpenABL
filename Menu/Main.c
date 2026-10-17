@@ -32,6 +32,8 @@
 #ifdef OABL_SYSFONT
 #include "Efi/SysFont.h"
 #endif
+// BOOT_EXTLINUX, which StandardBoot takes in every build
+#include "Boot/BootManager.h"
 #ifdef OABL_STANDARD_BOOT
 #include "Boot/Bli.h"
 #include "Boot/Booter.h"
@@ -239,21 +241,24 @@ StdBeforeStart (
   HandoverBefore (Context, Fs, OwnDevicetree);
 }
 
-// Boots the standard entries and boot options on Volumes. Returns
-// EFI_SUCCESS once one has run, or EFI_NOT_FOUND if there is nothing.
+// Boots the standard entries and boot options on Volumes, with the extlinux
+// labels Extlinux asks for. Returns EFI_SUCCESS once one has run, or
+// EFI_NOT_FOUND if there is nothing.
 STATIC EFI_STATUS
 StandardBoot (
   IN CONST MENU_HOST         *Host,
   IN CONST EFI_HANDLE        *Volumes,
   IN UINTN                    Count,
-  IN CONST MENU_BOOT_CONTEXT *Ctx
+  IN CONST MENU_BOOT_CONTEXT *Ctx,
+  IN BOOT_EXTLINUX            Extlinux
 )
 {
   STATIC CHAR8 Info[96];
   BOOT_SCOPE   Scope    = {.Only         = TRUE,
                            .Volumes      = Volumes,
                            .VolumeCount  = Count,
-                           .DefaultFiles = FALSE};
+                           .DefaultFiles = FALSE,
+                           .Extlinux     = Extlinux};
   BOOT_HOST    BootHost = {
     .Context         = (VOID *)Ctx,
     .ModelDevicetree = StdModelDevicetree,
@@ -302,10 +307,11 @@ StandardBoot (
   IN CONST MENU_HOST         *Host,
   IN CONST EFI_HANDLE        *Volumes,
   IN UINTN                    Count,
-  IN CONST MENU_BOOT_CONTEXT *Ctx
+  IN CONST MENU_BOOT_CONTEXT *Ctx,
+  IN BOOT_EXTLINUX            Extlinux
 )
 {
-  (VOID)Host, (VOID)Volumes, (VOID)Count, (VOID)Ctx;
+  (VOID)Host, (VOID)Volumes, (VOID)Count, (VOID)Ctx, (VOID)Extlinux;
   MenuLog ("built without standard boot");
   return EFI_UNSUPPORTED;
 }
@@ -389,7 +395,7 @@ BootPick (
     return FALSE;
   }
   BliSet ("LoaderEntryOneShot", Id);
-  return StandardBoot (Host, &Drive, 1, Ctx) == EFI_SUCCESS;
+  return StandardBoot (Host, &Drive, 1, Ctx, BOOT_EXTLINUX_WITH) == EFI_SUCCESS;
 }
 #endif
 
@@ -410,6 +416,7 @@ BootWithImage (
   UINTN              Count;
   EFI_STATUS         Status;
   EFI_STATUS         Returned;
+  EFI_STATUS         Labels;
 
   *HasImage = FALSE;
   if (!BootContextOf (Host, &Ctx)) {
@@ -436,7 +443,12 @@ BootWithImage (
     goto Picked;
   }
 #endif
-  Status = StandardBoot (Host, Volumes, Count, &Ctx);
+  // Every drive's default file comes before any drive's extlinux labels: a
+  // drive's EFI boot manager is what it means to boot, and its extlinux.conf
+  // is a last resort for U-Boot. Kettle Linux's steamcl picks an A/B slot
+  // and falls back to the other one; its extlinux.conf always boots the
+  // newest slot. Each target is tried once.
+  Status = StandardBoot (Host, Volumes, Count, &Ctx, BOOT_EXTLINUX_WITHOUT);
   FreePool (Volumes);
   MenuBootVolumes (&Ctx, &Volumes, &Count);
   if (DefaultFilesBoot (Volumes, Count, &Files, &Returned) ==
@@ -445,6 +457,13 @@ BootWithImage (
   } else if (Status != EFI_SUCCESS && Status != EFI_LOAD_ERROR) {
     MenuLog ("no default file");
     Status = EFI_NOT_FOUND;
+  }
+  FreePool (Volumes);
+  MenuBootVolumes (&Ctx, &Volumes, &Count);
+  Labels = StandardBoot (Host, Volumes, Count, &Ctx, BOOT_EXTLINUX_ONLY);
+  if (Labels == EFI_SUCCESS ||
+      (Labels == EFI_LOAD_ERROR && Status == EFI_NOT_FOUND)) {
+    Status = Labels;
   }
   FreePool (Volumes);
   *HasImage = HandOverBootImage (Host, &Ctx, Image);

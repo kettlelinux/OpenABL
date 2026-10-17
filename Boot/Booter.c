@@ -127,10 +127,11 @@ BooterNew (
   IN CONST BOOT_SCOPE *Scope
 )
 {
-  *Out = (BOOTER){
-    .Scope  = {.Only = Scope->Only, .DefaultFiles = Scope->DefaultFiles},
-    .Info   = Info,
-    .InitUs = InitUs};
+  *Out = (BOOTER){.Scope  = {.Only         = Scope->Only,
+                             .DefaultFiles = Scope->DefaultFiles,
+                             .Extlinux     = Scope->Extlinux},
+                  .Info   = Info,
+                  .InitUs = InitUs};
   if (Scope->Only && Scope->VolumeCount) {
     EFI_HANDLE *Volumes = AllocatePool (Scope->VolumeCount * sizeof (*Volumes));
 
@@ -170,7 +171,7 @@ BooterRefresh (IN OUT BOOTER *Booter)
   );
   BootManagerPlan (
     &Booter->Manager, Booter->Volumes.Items, Booter->Volumes.Count,
-    &Booter->Plan
+    Booter->Scope.Extlinux, &Booter->Plan
   );
   if (Booter->Scope.Only) {
     // Drop Boot#### files that are not on one of the given drives.
