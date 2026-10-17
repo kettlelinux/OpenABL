@@ -472,10 +472,29 @@ BootManagerPlan (
 
   *Out = (BOOT_MANAGER_TARGETS){0};
   if (Extlinux == BOOT_EXTLINUX_ONLY) {
-    // Each label once, and no boot options: the one-shot variables stay.
+    BOOT_MANAGER_TARGETS Tried = {0};
+
+    // No boot options, so no one-shot variable is used up. A label
+    // LoaderEntryDefault names was planned with them.
+    Wanted = BliGet ("LoaderEntryDefault");
+    if (Wanted) {
+      FindEntry (Volumes, VolumeCount, GoodAndMatches, Wanted, &Tried);
+    }
+    FreePool (Wanted);
     for (UINTN Index = 0; Index < VolumeCount; Index++) {
       Drive (Volumes, Index, Extlinux, Out);
     }
+    for (UINTN Index = 0; Index < Out->Count; Index++) {
+      BOOT_MANAGER_TARGET *Target = &Out->Items[Index];
+
+      if (Seen (Tried.Items, Tried.Count, Target)) {
+        BootManagerTargetFree (Target);
+      } else {
+        Out->Items[Kept++] = *Target;
+      }
+    }
+    Out->Count = Kept;
+    BootManagerTargetsFree (&Tried);
     return;
   }
   if (GetGlobal ("BootNext", &Data) && Data.Len == 2) {
